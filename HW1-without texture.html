@@ -1,0 +1,967 @@
+<!--
+
+/////////////////////////////////////////////////////////////
+//                                                         //
+//                  INTERACTIVE GRAPHICS 2016              //
+//                        homework 1st                     //
+//                - version without textures -             //
+//                                                         //
+//                  Coratti Stefano 1624508                //
+//                                                         //
+/////////////////////////////////////////////////////////////
+
+-->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>HomeWork#1</title>
+
+<script type="x-shader/x-vertex" id="vshader">    
+     attribute  vec3 coords;
+     attribute  vec3 normal;
+     attribute  vec2 texturecoords; 
+          
+     varying    vec3 vPosition;
+     varying    vec3 vNormal;
+     varying    vec2 vTextureCoords;
+     
+     uniform    mat4 modelview;
+     uniform    mat4 projection;
+     uniform    mat3 normalMatrix;
+     uniform    vec4 color;
+     
+     varying    vec4 vColor;
+           
+     void main() {
+        vec4 position = vec4(coords,1.0);
+        vec4 transformedVertex = modelview * position;
+        gl_Position = projection * transformedVertex;
+        
+        vNormal = normalize(normalMatrix*normal);
+        vPosition = vec3(transformedVertex);
+        
+        vColor = color;
+        vTextureCoords = texturecoords;
+     }
+     
+</script>
+<script type="x-shader/x-fragment" id="fshader">
+     precision mediump float;
+     
+     varying    vec3 vPosition;
+     varying    vec3 vNormal;
+     varying    vec2 vTextureCoords;
+     
+     varying    vec4 vColor;
+     
+     uniform    vec3 AmbientLight;
+     
+     uniform    vec3 SunDirection;
+     uniform    vec3 SunColor;
+     
+     uniform    mat4 LightMatView[2];
+     
+     uniform    vec3 PointLightPosition_SX[2];
+     uniform    vec3 PointLightPosition_DX[2];
+     uniform    vec3 PointLightColor; 
+        
+     uniform    sampler2D Sampler;
+     
+     void main() {
+     
+        vec4    COLOR = vColor; 
+        
+        if( COLOR.rgb == vec3(1.0, 0.0, 1.0)) // I'VE USED PURPLE COLOR AS TRANSPARENT COLOR,
+            discard;                          // EACH FRAGMENT WITH rgb=(255, 0, 255) WILL BE DISCARDED, WILL NOT BE DRAWN
+            
+        const   int     MAX_LIGHT = 2;
+        
+        vec3    Adiffuse = (AmbientLight * vec3(COLOR));
+        
+        vec3    N = normalize(vNormal);
+                
+        vec3    S = normalize(SunDirection);
+        
+        vec3    V = normalize(-vPosition);
+        
+        float   NdotS = max(dot(N, S), 0.0);       
+        
+        // diffuse component of the sun
+        vec3    Sdiffuse = vec3(SunColor) * vec3(COLOR) * NdotS;
+        
+        // specular component of the sun
+        vec3    R = normalize((2.0 * NdotS * N) - S);
+        float   RdotV = max(0.0, dot(R, V));
+        float   spec = pow(RdotV, 32.0);
+        vec3    Sspecular = (vec3(SunColor) * vec3(COLOR) * spec);  
+        
+        vec3    LtotDiffuse = vec3(0.0, 0.0, 0.0);
+        vec3    LtotSpecular = vec3(0.0, 0.0, 0.0);
+        
+        vec3    Point1, Point2;     
+        vec3    L1, L2;         
+        float   dist1, dist2;
+        float   NdotL1, NdotL2;
+        vec3    L1diffuse, L2diffuse, L1specular, L2specular;
+        
+        for(int i=0; i<MAX_LIGHT; i++)
+        {
+            Point1 = vec3( LightMatView[i] * vec4(PointLightPosition_SX[i], 1.0));
+            L1 = normalize( Point1 - vPosition);
+            dist1 = distance(Point1, vPosition);
+        
+            Point2 = vec3( LightMatView[i] * vec4(PointLightPosition_DX[i], 1.0));
+            L2 = normalize( Point2 - vPosition);
+            dist2 = distance(Point2, vPosition);
+          
+            NdotL1 = max(dot(N, L1), 0.0);
+            NdotL2 = max(dot(N, L2), 0.0);
+        
+            L1diffuse = (vec3(PointLightColor) * vec3(COLOR) * NdotL1) / (dist1*dist1*0.5);
+            L2diffuse = (vec3(PointLightColor) * vec3(COLOR) * NdotL2) / (dist2*dist2*0.5);
+                
+            // specular component of point light 1
+            R = normalize((2.0 * NdotL1 * N) - L1);
+            RdotV = max(0.0, dot(R, V));
+            spec = pow(RdotV, 32.0);
+            L1specular = (vec3(PointLightColor) * vec3(COLOR) * spec) / (dist1*dist1*0.5); 
+        
+            // specular component of point light 2
+            R = normalize((2.0 * NdotL2 * N) - L2);
+            RdotV = max(0.0, dot(R, V));
+            spec = pow(RdotV, 32.0);
+            L2specular = (vec3(PointLightColor) * vec3(COLOR) * spec) / (dist2*dist2*0.5); 
+            
+            LtotDiffuse  += L1diffuse;
+            LtotDiffuse  += L2diffuse;
+                
+            LtotSpecular += L1specular;
+            LtotSpecular += L2specular;
+        }                       
+        
+        gl_FragColor = vec4(Adiffuse,1.0) + vec4(Sdiffuse,1.0) + vec4(Sspecular,1.0) + vec4(LtotDiffuse,1.0) + vec4(LtotSpecular,1.0);
+
+     }
+     
+</script>
+
+
+<script type="text/javascript" src="gl-matrix.js"></script>
+<script type="text/javascript" src="basic-objects.js"></script>
+<script type="text/javascript" src="simple-rotator.js"></script>
+
+<script type="text/javascript">
+
+"use strict";
+
+var gl;   // The webgl context.
+
+var aCoords;           // Location of the coords attribute variable in the shader program.
+var aCoordsBuffer;     // Buffer to hold coords.
+var aNormal;           // Location of the normal uniform in the shader program.
+var aNormalBuffer;     // Buffer to hold normal vectors.
+var indexBuffer;       // Buffer to hold indices for gl.drawElements
+var uColor;            // Location of the color uniform variable in the shader program.
+var uProjection;       // Location of the projection uniform matrix in the shader program.
+var uModelview;        // Location of the modelview unifirm matrix in the shader program.
+var uNormalMatrix;     // Location of the normalMatrix uniform matrix in the shader program.
+
+//////// ADDED PART FOR THE LIGHTS //////////////////
+var uSunDirection;  
+var uSunColor;
+var uAmbientLight;  
+var uPointLightPosition_SX = [];
+var uPointLightPosition_DX = [];
+var uPointLightColor;
+
+var uLightMatView = [];
+
+var ANGLE = 0.0; // I USE FOR ANIMATION
+    
+var AMBIENT_LIGHT = [1.0, 1.0, 1.0];      
+
+var SUN_ANGLE = Math.PI/2; // I'VE USED TO MOVE THE SUN DIRECTION 
+var SUN_DIRECTION = [ -1.0, 0.0, 0.0];     
+var SUN_COLOR = [1.0, 1.0, 1.0]; 
+
+var POINT_LIGHT_COLOR = [1.0, 1.0, 1.0]; // THE LIGHT OF POSITIONAL LIGHT ON FRONT OF BYKE
+/////////////////////////////////////////////////////
+    
+//////// ADDED PART FOR THE TEXTURES ////////////////// 
+var aTextureCoords;
+var uSampler; 
+var currentTexture = null;    
+
+var TEXTURE_STREET, TEXTURE_GRASS, TEXTURE_WOOD, TEXTURE_TREE, TEXTURE_WHEEL, TEXTURE_BICYCLE_A,TEXTURE_HANDBAR_A,
+    TEXTURE_BICYCLE_B,TEXTURE_HANDBAR_B, TEXTURE_LAMP, TEXTURE_SADDLE, TEXTURE_PEDAL_0, TEXTURE_PEDAL_1;
+/////////////////////////////////////////////////////
+    
+var projection = mat4.create();   // projection matrix
+var modelview = mat4.create();    // modelview matrix
+var normalMatrix = mat3.create(); // matrix, derived from modelview matrix, for transforming normal vectors
+
+var rotator;   // A SimpleRotator object to enable rotation by mouse dragging.
+
+var frameNumber = 0;  // frame number during animation (actually only goes up by 0.5 per frame)
+
+var torus, sphere, cone, cylinder, disk, ring, cube;  // basic objects, created using function createModel
+
+var show = 1;  // When this variable is 1, the entire scene is drawn; when it is 2, only the car is shown
+
+var modelview;                  // The current modelview matrix
+var matrixStack = [];           // A stack of matrices for implementing hierarchical graphics.
+
+var currentColor = [1,1,1,1];   // The current drawing color; objects are rendered using this color.
+
+var nBicycles; 
+
+/**
+ * Draws the image, which consists of either the "world" or a closeup of the "car".
+ */
+function draw() {
+    
+    nBicycles = 0; // A COUNTER OF NUMBER OF BICYCLES IN THE SCENE
+    
+    gl.clearColor(0.0, 0.0, 0.0 ,1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    
+    mat4.perspective(projection, Math.PI/4, 1, 1, 50);			//assigns to the matrix projection the transformation with frustum
+																//defined by an eye angle of 45 degrees (pi/4), ratio of width/height
+																// of 1, near plane 1 and far plane 50
+    gl.uniformMatrix4fv(uProjection, false, projection );		//assigns the value of the matrix projection to the uniform matrix uProjection
+
+    modelview = rotator.getViewMatrix();						//computes the modelview from the position of the rotator
+    mat3.normalFromMat4(normalMatrix, modelview);				//computes the normalMatrix (used to multiply the normals) from the modelview
+    
+    if (show == 1)
+        world();
+    else
+        car();
+}
+
+/**
+ * Draws a "world" consisting of a disk holding some trees and a road, and a car that
+ * drives along the road.  A tree in the middle grows from frame 0 to frame 1000.
+ */
+function world() {
+    
+    pushMatrix();													//creates a copy of the current top matrix of the matrix stack
+	mat4.translate(modelview,modelview,[0,-0.05,0]);				//modifies the second parameter (modelview) by multiplying it with
+																	//the translation matrix with parameters [0,-0.05,0] and assigns the result
+																	//to the first parameter. In this case, it modifies the modelview.
+	mat4.rotate(modelview,modelview,(90)/180*Math.PI,[1,0,0]);		//modifies the second parameter (modelview) by multiplying it with
+																	//the rotation matrix with parameters (90)/180*Math.PI (angle of 90 degrees) and
+																	//[1,0,0] (axis of rotation) and assigns the result
+																	//to the first parameter. In this case, it modifies the modelview.
+	currentColor = [0.1,0.4,0.1,1];									//Defines the color
+    currentTexture = TEXTURE_GRASS;
+    disk.render();	                                                //Renders the disk
+	currentTexture = null;
+    popMatrix();													//deletes the top matrix of the stack
+	
+    pushMatrix();
+	currentColor = [0.7,0.7,0.8,1];
+    currentTexture = TEXTURE_STREET;
+	mat4.rotate(modelview,modelview,(90)/180*Math.PI,[-1,0,0]);
+	ring.render();
+    currentTexture = null;
+	popMatrix();
+    
+    // BICYCLE
+	pushMatrix();
+    mat4.translate(modelview,modelview,[3.7*Math.sin(ANGLE),0.45, 3.7*Math.cos(ANGLE)]);
+    mat4.rotate(modelview,modelview, ANGLE,[0,1,0]);
+	mat4.translate(modelview,modelview,[-1.0, 0.0, 0.0]);
+    bicycle(TEXTURE_BICYCLE_A,TEXTURE_HANDBAR_A);
+	popMatrix();
+    
+    // BICYCLE
+	pushMatrix();
+    mat4.translate(modelview,modelview,[-3.7*Math.sin(ANGLE),0.45, -3.7*Math.cos(ANGLE)]);
+    mat4.rotate(modelview,modelview, Math.PI + ANGLE,[0,1,0]);
+    mat4.translate(modelview,modelview,[-1.0, 0.0, 0.0]);
+	bicycle(TEXTURE_BICYCLE_B,TEXTURE_HANDBAR_B);
+	popMatrix();
+    
+   	//TREE
+    pushMatrix();
+	mat4.translate(modelview,modelview,[5.2,0.45,0]);
+	tree();
+	popMatrix();
+    
+    //TREE
+    pushMatrix();
+	mat4.translate(modelview,modelview,[-5,0.45,0]);
+	tree();
+	popMatrix();
+    
+    //TREE
+    pushMatrix();
+	mat4.translate(modelview,modelview,[-2.5,0.45, -4.5]);
+	tree();
+	popMatrix();
+    
+    //TREE
+    pushMatrix();
+    mat4.translate(modelview,modelview,[2.5,0.45, -4.5]);
+	tree();
+	popMatrix();
+    
+    popMatrix();
+}
+
+/**
+ * Draws a tree consisting of a green cone with a brown cylinder for a trunk.
+ */
+function tree() {
+	pushMatrix();
+	
+    pushMatrix();
+	currentColor = [0.5,0.3,0.1,1];
+    
+    mat4.translate(modelview,modelview,[0.0, 0.0, 0.0]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.3, 0.3, 1.0]);
+    
+    currentTexture = TEXTURE_WOOD;
+    cylinder.render();
+	popMatrix();
+    
+	pushMatrix();
+	currentColor = [0,0.8,0,1];    
+    mat4.translate(modelview,modelview,[0.0, (1.0 + 0.275) , 0.0]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[1.2, 1.2, 2.0]);
+	
+    currentTexture = TEXTURE_TREE;
+    cone.render();
+	popMatrix();
+	
+    currentTexture = null;
+    popMatrix();
+}
+
+/**
+ * Draws a bicycle consisting of a (simplified) body, two wheels 
+ * and a light positioned in front.
+ */
+function bicycle( textureBicycle, textureHandbar) {
+	
+    nBicycles++;
+    
+    pushMatrix();
+    
+    //WHEEL
+    pushMatrix();	
+    currentColor = [0,0,0.7,1];
+    currentTexture = TEXTURE_WHEEL;
+    mat4.rotate(modelview,modelview, 3*ANGLE ,[ 0,0,-1]);
+    mat4.scale(modelview,modelview,[0.4, 0.4, 0.3]);     
+   	wheel();
+    popMatrix();
+    
+    //WHEEL
+    pushMatrix();  
+    mat4.translate(modelview,modelview,[1.5, 0.0 , 0.0]);
+    mat4.rotate(modelview,modelview, 3*ANGLE,[ 0,0,-1]);
+    mat4.scale(modelview,modelview,[0.4, 0.4, 0.3]);     
+   	wheel();
+    currentTexture = null;
+    popMatrix();
+    
+    //BODY
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    currentTexture = textureBicycle;
+    mat4.translate(modelview,modelview,[0.375, 0.0 , 0.04]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.75]);     
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.375, 0.0 , -0.04]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.75]);     
+    cylinder.render();
+    popMatrix();
+	
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 0.04]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.rotate(modelview,modelview,(45)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.6]);     
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 0.5]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.0, 0.0 , -0.04]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.rotate(modelview,modelview,(45)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.6]);     
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 0.5]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.75, 0.0 , 0.0]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.rotate(modelview,modelview,(45)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.75]);     
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 0.5]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.12]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.75, 0.0 , 0.0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.12]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.425, 0.425 , 0.0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.12]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.75, 0.0 , 0.0]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.rotate(modelview,modelview,(90+33)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.75]);     
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 0.5]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[1.5, 0.0 , 0.04]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.rotate(modelview,modelview,(90+23)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.55]);     
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 0.5]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[1.5, 0.0 , -0.04]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.rotate(modelview,modelview,(90+23)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.55]);     
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 0.5]);
+    cylinder.render();
+    popMatrix();
+	
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[1.5, 0.0 , 0.0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.12]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[1.275, 0.53 , 0.0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.12]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[1.5, 0.0 , 0.0]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.rotate(modelview,modelview,(90+23)/180*Math.PI,[ -1,0,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.1]);     
+    mat4.translate(modelview,modelview,[0.0, 0.0 , 6.5]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0,1];
+    mat4.translate(modelview,modelview,[0.83 , 0.46 , 0.0]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.75]);     
+    cylinder.render();
+    popMatrix();
+    
+    // HANDLEBAR
+    pushMatrix();
+	currentColor = [1.0, 1.0, 0.0,1];
+    currentTexture = textureHandbar;
+    mat4.translate(modelview,modelview,[1.23, 0.65 , 0.0]);
+    mat4.scale(modelview,modelview,[0.06, 0.06, 0.5]);
+    cylinder.render();
+    currentTexture = null;
+    popMatrix();
+    
+    //PEDAL SX
+    pushMatrix(); 
+    mat4.translate(modelview,modelview,[0.75 , 0.0 , -0.08]);
+    mat4.rotate(modelview,modelview, 3*ANGLE,[ 0,0,-1]);
+    mat4.rotate(modelview,modelview, Math.PI ,[ 1,0,0]);
+    pedal();
+    popMatrix();
+    
+    //PEDAL DX
+    pushMatrix(); 
+    mat4.translate(modelview,modelview,[0.75 , 0.0 , 0.08]);
+    mat4.rotate(modelview,modelview, 3*ANGLE + Math.PI,[ 0,0,-1]);
+    pedal();
+    popMatrix();   
+    
+    // SADDLE
+    pushMatrix();
+	currentColor = [1.0, 0.0, 0.0, 1.0];
+    currentTexture = TEXTURE_SADDLE;
+    mat4.translate(modelview,modelview,[0.375, 0.65 , 0.0]);
+    mat4.scale(modelview,modelview,[0.25, 0.01, 0.15]);
+    cube.render();
+    currentTexture = null;
+    popMatrix();
+    
+    // POSITIONAL LIGHT SX
+    pushMatrix();
+	currentColor = [1.0, 1.0, 1.0, 1.0];
+    currentTexture = TEXTURE_LAMP;
+    mat4.translate(modelview,modelview,[1.3 , 0.53 , 0.05]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,-1,0]);
+    mat4.scale(modelview,modelview,[0.15, 0.15, 0.15]);   
+    
+    gl.uniform3f(uPointLightPosition_SX[ nBicycles-1 ], -4.5, 1.0, -6.0);
+    gl.uniform3fv(uPointLightColor,  POINT_LIGHT_COLOR);
+    gl.uniformMatrix4fv(uLightMatView[ nBicycles-1 ],false, modelview);
+    
+    cone.render();
+    currentTexture = null;
+    popMatrix();
+    
+    // POSITIONAL LIGHT DX
+    pushMatrix();
+	currentColor = [1.0, 1.0, 1.0, 1.0];
+    currentTexture = TEXTURE_LAMP;
+    mat4.translate(modelview,modelview,[1.3 , 0.53 , -0.05]);
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,-1,0]);
+    mat4.scale(modelview,modelview,[0.15, 0.15, 0.15]);     
+     
+    gl.uniform3f(uPointLightPosition_DX[ nBicycles-1 ], 4.5, 1.0, -6.0);
+    gl.uniform3fv(uPointLightColor, POINT_LIGHT_COLOR);
+    gl.uniformMatrix4fv(uLightMatView[ nBicycles-1 ],false, modelview);
+    
+    cone.render();
+    currentTexture = null;
+    popMatrix();
+    
+    popMatrix();
+    
+}
+
+/**
+ * Draw a rotating wheel that consists of a torus to make the wheel.
+ */
+function wheel() {
+	pushMatrix();
+	torus.render();
+	popMatrix();
+}
+
+/**
+ * Draw a rotating pedal
+ */ 
+function pedal() {
+	pushMatrix(); 
+    currentTexture = TEXTURE_PEDAL_1;
+    mat4.rotate(modelview,modelview,(90)/180*Math.PI,[ 0,1,0]);
+    mat4.scale(modelview,modelview,[0.04, 0.04, 0.20]);
+    mat4.translate(modelview,modelview,[0.0 , 0.0 , 0.5]);
+    cylinder.render();
+    popMatrix();
+    
+    pushMatrix();
+    mat4.scale(modelview,modelview,[0.04, 0.1, 0.1]);
+    mat4.translate(modelview,modelview,[5.0 , 0.0 , 0.5]);
+    currentTexture = TEXTURE_PEDAL_0;
+    cube.render();
+    currentTexture = null;
+    popMatrix();
+}    
+
+/**
+ *  Push a copy of the current modelview matrix onto the matrix stack.
+ */
+function pushMatrix() {
+    matrixStack.push( mat4.clone(modelview) );
+}
+
+/**
+ *  Restore the modelview matrix to a value popped from the matrix stack.
+ */
+function popMatrix() {
+    modelview = matrixStack.pop();
+}
+
+
+/**
+ *  Create one of the basic objects.  The modelData holds the data for
+ *  an IFS using the structure from basic-objects-IFS.js.  This function
+ *  creates VBOs to hold the coordinates, normal vectors, and indices
+ *  from the IFS, and it loads the data into those buffers.  The function
+ *  creates a new object whose properties are the identifies of the
+ *  VBOs.  The new object also has a function, render(), that can be called to
+ *  render the object, using all the data from the buffers.  That object
+ *  is returned as the value of the function.  (The second parameter,
+ *  xtraTranslate, is there because this program was ported from a Java
+ *  version where cylinders were created in a different position, with
+ *  the base on the xy-plane instead of with their center at the origin.
+ *  The xtraTranslate parameter is a 3-vector that is applied as a
+ *  translation to the rendered object.  It is used to move the cylinders
+ *  into the position expected by the code that was ported from Java.)
+ */
+function createModel(modelData, xtraTranslate) {
+    
+    var model = {};
+    model.coordsBuffer = gl.createBuffer();
+    model.normalBuffer = gl.createBuffer();
+    model.textCoordsBuffer = gl.createBuffer();
+    
+    model.indexBuffer = gl.createBuffer();
+    model.count = modelData.indices.length;
+        
+    if (xtraTranslate)
+        model.xtraTranslate = xtraTranslate;
+    else
+        model.xtraTranslate = null;
+    gl.bindBuffer(gl.ARRAY_BUFFER, model.coordsBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, modelData.vertexPositions, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, model.normalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, modelData.vertexNormals, gl.STATIC_DRAW);
+    
+    gl.bindBuffer(gl.ARRAY_BUFFER, model.textCoordsBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, modelData.vertexTextureCoords, gl.STATIC_DRAW);
+    
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, model.indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, modelData.indices, gl.STATIC_DRAW);
+    
+    model.render = function() {  // This function will render the object.
+           // Since the buffer from which we are taking the coordinates and normals
+	   // change each time an object is drawn, we have to use gl.vertexAttribPointer
+	   // to specify the location of the data. And to do that, we must first
+	   // bind the buffer that contains the data.  Similarly, we have to
+	   // bind this object's index buffer before calling gl.drawElements.
+    
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.coordsBuffer);
+        gl.vertexAttribPointer(aCoords, 3, gl.FLOAT, false, 0, 0);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+        gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 0, 0);
+        
+        //////////ADDED PART FOR THE LIGHTS /////////////
+        gl.uniform3fv(uAmbientLight, AMBIENT_LIGHT);
+        gl.uniform3fv(uSunDirection, SUN_DIRECTION);
+        gl.uniform3fv(uSunColor, SUN_COLOR);
+        /////////////////////////////////////////////////
+        
+        //////////ADDED PART FOR THE TEXTURES ///////////
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.textCoordsBuffer);
+        gl.vertexAttribPointer(aTextureCoords, 2, gl.FLOAT, false, 0, 0);  
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, currentTexture);
+        gl.uniform1i(uSampler, 0);        
+        /////////////////////////////////////////////////
+        
+        gl.uniform4fv(uColor, currentColor);
+        if (this.xtraTranslate) {
+            pushMatrix();
+            mat4.translate(modelview,modelview,this.xtraTranslate);
+        }
+        gl.uniformMatrix4fv(uModelview, false, modelview );
+        mat3.normalFromMat4(normalMatrix, modelview);
+        gl.uniformMatrix3fv(uNormalMatrix, false, normalMatrix);
+        
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.drawElements(gl.TRIANGLES, this.count, gl.UNSIGNED_SHORT, 0);
+        
+        if (this.xtraTranslate) {
+            popMatrix();
+        }
+    }
+    return model;
+}
+
+
+
+/* Creates a program for use in the WebGL context gl, and returns the
+ * identifier for that program.  If an error occurs while compiling or
+ * linking the program, an exception of type String is thrown.  The error
+ * string contains the compilation or linking error.  If no error occurs,
+ * the program identifier is the return value of the function.
+ */
+function createProgram(gl, vertexShaderSource, fragmentShaderSource) {
+   var vsh = gl.createShader( gl.VERTEX_SHADER );
+   gl.shaderSource(vsh,vertexShaderSource);
+   gl.compileShader(vsh);
+   if ( ! gl.getShaderParameter(vsh, gl.COMPILE_STATUS) ) {
+      throw "Error in vertex shader:  " + gl.getShaderInfoLog(vsh);
+   }
+   var fsh = gl.createShader( gl.FRAGMENT_SHADER );
+   gl.shaderSource(fsh, fragmentShaderSource);
+   gl.compileShader(fsh);
+   if ( ! gl.getShaderParameter(fsh, gl.COMPILE_STATUS) ) {
+      throw "Error in fragment shader:  " + gl.getShaderInfoLog(fsh);
+   }
+   var prog = gl.createProgram();
+   gl.attachShader(prog, vsh);
+   gl.attachShader(prog, fsh);
+    
+   gl.linkProgram(prog);
+   if ( ! gl.getProgramParameter( prog, gl.LINK_STATUS) ) {
+      throw "Link error in program:  " + gl.getProgramInfoLog(prog);
+   }
+   return prog;
+}
+
+
+/* Gets the text content of an HTML element.  This is used
+ * to get the shader source from the script elements that contain
+ * it.  The parameter should be the id of the script element.
+ */
+function getTextContent( elementID ) {
+    var element = document.getElementById(elementID);
+    var fsource = "";
+    var node = element.firstChild;
+    var str = "";
+    while (node) {
+        if (node.nodeType == 3) // this is a text node
+            str += node.textContent;
+        node = node.nextSibling;
+    }
+    return str;
+}
+
+
+///////////// ADDED PART FOR THE TEXTURES ////////////////////////   
+/* I have chosen for all textures using the same parameters because the result was fine for each one
+   MAGNIFICATION FILTER = LINEAR
+   MINIMIZATION  filter = NEAREST
+   WRAP S and T = REPEAT
+   
+   Since i load all PNG images then i chose to read image with RGBA components 
+*/
+function createTexture(pathImage)
+{
+    var texture = gl.createTexture();
+    texture.image = new Image();
+    var thisTexture = texture;
+    texture.image.onload = function()
+    {
+        gl.bindTexture(gl.TEXTURE_2D, thisTexture);
+		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, thisTexture.image);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+		gl.generateMipmap(gl.TEXTURE_2D);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+    
+    texture.image.src = pathImage;
+    return texture;
+}
+//////////////////////////////////////////////////////////////////
+    
+//--------------------------------- animation framework ------------------------------
+
+window.requestAnimationFrame = 
+    window.requestAnimationFrame ||
+    window.mozRequestAnimationFrame ||
+    window.webkitRequestAnimationFrame ||
+    window.msRequestAnimationFrame ||
+    window.oRequestAnimationFrame ||
+    function (callback) {
+        setTimeout(function() { callback(Date.now()); },  1000/60);
+    }
+    
+var animating = false;
+
+function frame() {
+    if (animating) {
+        frameNumber += 0.5;
+        
+        // to move the bicycles
+        if (ANGLE < 2.0*Math.PI)
+            ANGLE += 0.02;
+        else
+            ANGLE = 0.0;
+        
+        // to move the sun
+        if (SUN_ANGLE < 2.0*Math.PI)
+            SUN_ANGLE += 0.005;
+        else
+            SUN_ANGLE = 0.0;
+        
+        SUN_DIRECTION = [Math.cos(SUN_ANGLE), Math.sin(SUN_ANGLE), 0.0];
+        
+        var intensity = Math.sin(SUN_ANGLE); 
+         
+        if( Math.sin(SUN_ANGLE) < 0)
+        {
+            AMBIENT_LIGHT = [0.0, 0.0, 0.0];
+            SUN_COLOR = [0.0, 0.0, 0.0];  
+            POINT_LIGHT_COLOR = [1.0, 1.0, 1.0];
+        }
+        else if( Math.sin(SUN_ANGLE) < 0.5 )
+        {
+            AMBIENT_LIGHT = [0.5, 0.5*intensity + 0.25, 0.5*intensity];
+            SUN_COLOR = [1.0, 1.0*intensity, 1.0*intensity];
+            POINT_LIGHT_COLOR = [1.0, 1.0, 1.0];
+        }
+        else
+        {
+            AMBIENT_LIGHT = [0.5, 0.5*intensity + 0.25, 0.5*intensity];
+            SUN_COLOR = [1.0, 1.0, 1.0];
+            POINT_LIGHT_COLOR = [0.0, 0.0, 0.0];
+        }
+                         
+        draw();
+        requestAnimationFrame(frame);
+    }
+}
+
+function setAnimating(run) {
+    if (run != animating) {
+        animating = run;
+        if (animating)
+            requestAnimationFrame(frame);
+    }
+}
+
+//-------------------------------------------------------------------------
+
+function init() {
+   try {
+        var canvas = document.getElementById("glcanvas");
+        gl = canvas.getContext("webgl");
+       
+        if ( ! gl ) {
+            gl = canvas.getContext("experimental-webgl");
+        }
+        if ( ! gl ) {
+            throw "Could not create WebGL context.";
+        }
+        var vertexShaderSource = getTextContent("vshader"); 
+        var fragmentShaderSource = getTextContent("fshader");
+        var prog = createProgram(gl,vertexShaderSource,fragmentShaderSource);
+        gl.useProgram(prog);
+        
+        aCoords =  gl.getAttribLocation(prog, "coords");
+        aNormal =  gl.getAttribLocation(prog, "normal");
+       
+        uModelview = gl.getUniformLocation(prog, "modelview");
+        uProjection = gl.getUniformLocation(prog, "projection");
+        uColor =  gl.getUniformLocation(prog, "color");
+        uNormalMatrix =  gl.getUniformLocation(prog, "normalMatrix");
+        gl.enableVertexAttribArray(aCoords);  // won't change after initialization.
+        gl.enableVertexAttribArray(aNormal);  // also won't change
+       
+        ///////////// ADDED PART FOR THE LIGHTS ////////////////////////
+        uAmbientLight = gl.getUniformLocation(prog, "AmbientLight");
+        uSunDirection = gl.getUniformLocation(prog, "SunDirection");
+        uSunColor = gl.getUniformLocation(prog, "SunColor");
+        for( var i=0; i<2; i++)
+        {
+            uPointLightPosition_SX[i] = gl.getUniformLocation(prog, "PointLightPosition_SX[" + i + "]"); 
+            uPointLightPosition_DX[i] = gl.getUniformLocation(prog, "PointLightPosition_DX[" + i + "]"); 
+            uLightMatView[i]          = gl.getUniformLocation(prog, "LightMatView[" + i + "]");
+        }
+        uPointLightColor = gl.getUniformLocation(prog, "PointLightColor");
+        ////////////////////////////////////////////////////////////////
+       
+        ///////////// ADDED PART FOR THE TEXTURES //////////////////////
+        aTextureCoords = gl.getAttribLocation(prog, "texturecoords");
+        gl.enableVertexAttribArray(aTextureCoords);
+        uSampler = gl.getUniformLocation(prog, "Sampler");
+        ////////////////////////////////////////////////////////////////        
+        
+        gl.enable(gl.DEPTH_TEST);
+   }
+   catch (e) {
+      document.getElementById("message").innerHTML =
+           "Could not initialize WebGL: " + e;
+      return;
+   }
+   
+   torus = createModel(uvTorus(0.8,1.0,16,8));   // Create all the basic objects.
+   sphere = createModel(uvSphere(1));
+   cone = createModel(uvCone());
+   cylinder = createModel(uvCylinder());
+   disk = createModel(uvCylinder(5.5,0.5,64),[0,0,.25]);
+   ring = createModel(ring(3.3,4.8,40));
+   cube = createModel(cube());
+
+   TEXTURE_STREET    = createTexture("./textures/street4.png");
+   TEXTURE_GRASS     = createTexture("./textures/green_grass3.png");  
+   TEXTURE_WOOD      = createTexture("./textures/woodTree.png");  
+   TEXTURE_TREE      = createTexture("./textures/tree.png");
+   TEXTURE_WHEEL     = createTexture("./textures/wheel.png");   
+   TEXTURE_LAMP      = createTexture("./textures/lamp.png");
+   TEXTURE_SADDLE    = createTexture("./textures/saddle.png");
+   TEXTURE_BICYCLE_A = createTexture("./textures/bicycle_A.png");    
+   TEXTURE_HANDBAR_A = createTexture("./textures/bicycle_handlebar_A.png");
+   TEXTURE_BICYCLE_B = createTexture("./textures/bicycle_B.png");    
+   TEXTURE_HANDBAR_B = createTexture("./textures/bicycle_handlebar_B.png");
+   TEXTURE_PEDAL_0   = createTexture("./textures/pedal_0.png");
+   TEXTURE_PEDAL_1   = createTexture("./textures/pedal_1.png");
+    
+   rotator = new SimpleRotator(canvas,draw);
+   rotator.setView( [0, 1, 2], [0,1,0], 14);
+
+   draw();
+   setAnimating(true);
+}  
+
+
+
+</script>
+</head>
+<body onload="init()" style="background-color:#DDD">
+
+
+
+<p id="message" style="font-weight:bold">Drag your mouse on the model to rotate it.</p>
+    
+<p id="message2" style="color: #ff0000">    THE SUN MOVES SIMULATING DAY AND NIGHT, ALSO A BIT OF SUNRISE  AND SUNSET.<br>
+                                            DURING DARK MOMENTS, LIKE NIGHT, SUNRISE OR SUNSET THE BYKE LIGHTS ARE TURNED ON<br>
+                                            INSTEAD DURING THE REST OF DAY ARE TURNED OFF.</p>
+    
+<p id="message3" style="color: #0000ff">    Coratti Stefano 1624508</p>    
+
+<p>
+</p>
+
+
+<div>
+
+    <canvas width=800 height=800 id="glcanvas" style="background-color:blue"></canvas>
+</div>
+
+
+</body>
+</html>
+

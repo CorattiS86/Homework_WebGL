@@ -15,7 +15,7 @@ include:
 PS: the browser requires the permissions to access to file (in this case required to access to textures),
     then in according to your preffered browser remember to give it permission, otherwise you will not see the textures.
     
-   CHROME: 1) Add the path of Chrome.exe in PATH of SYSTEM ENVIRONMENT VARIABLES
-           2) Execute Command Prompt with Administrator Privileges
-           3) launch "chrome.exe --allow-file-access-from-files"
+Line  CHROME:  1) Add the path of Chrome.exe in PATH of SYSTEM ENVIRONMENT VARIABLES
+Line           2) Execute Command Prompt with Administrator Privileges
+Line           3) launch "chrome.exe --allow-file-access-from-files"
     

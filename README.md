@@ -18,4 +18,8 @@ PS: the browser requires the permissions to access to file (in this case require
     CHROME:  1. Add the path of Chrome.exe in PATH of SYSTEM ENVIRONMENT VARIABLES
              2. Execute Command Prompt with Administrator Privileges
              3. launch "chrome.exe --allow-file-access-from-files"
+             
+    FIREFOX:  1. write in the URL bar "about:config"
+              2. set the field "security.fileuri.strict_origin_policy = false"
+              
     

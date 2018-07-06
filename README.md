@@ -1,5 +1,7 @@
 # Homework_WebGL
 
+![alt text](https://github.com/CorattiS86/Homework_WebGL/blob/master/bicycles.jpg)
+
 This is a work for Computer Graphics (Master Engineering Computer Science).
 It's a mix of HTML, Javascript and Shading Language that allow to develop with 
 WebGL libraries.
